@@ -249,82 +249,149 @@ def gen_batches(data,batch_size=50,shuffle=True):
 		yield data[i*batch_size:i*batch_size+batch_size]
 
 ###################################################################################
-
-def generator(z,reuse=False,isTrain=True):
+def generator(z,reuse=False,isTrain=True,dataset="celebraA"):
 	with tf.variable_scope("generator") as scope:
 		if reuse:
 			scope.reuse_variables()
 
 		s = Image_Size
 
-		#for mnist
-		s8,s4,s2 = 4,7,14
-		with tf.variable_scope("linear1"):
-			x = linear(z,[100,64*4*s8*s8])
-			x = tf.reshape(x,[Batch_size,s8,s8,64*4])
-			x = g_bn0(x,isTrain)
-			project_out = tf.nn.relu(x)
-			# print x.get_shape()
+
+		if dataset=="mnist":
+			s8,s4,s2 = 4,7,14
+			with tf.variable_scope("linear1"):
+				x = linear(z,[100,64*4*s8*s8])
+				x = tf.reshape(x,[Batch_size,s8,s8,64*4])
+				x = g_bn0(x,isTrain)
+				project_out = tf.nn.relu(x)
+				# print x.get_shape()
 
 
-		with tf.variable_scope("deconv1"):
-			x = deconv2d(project_out,[Batch_size,s4,s4,64*2])
-			x = g_bn1(x,isTrain)
-			deconv1_out = tf.nn.relu(x)
-			# print deconv1_out.get_shape()
+			with tf.variable_scope("deconv1"):
+				x = deconv2d(project_out,[Batch_size,s4,s4,64*2])
+				x = g_bn1(x,isTrain)
+				deconv1_out = tf.nn.relu(x)
+				# print deconv1_out.get_shape()
 
-		with tf.variable_scope("deconv2"):
-			x = deconv2d(deconv1_out,[Batch_size,s2,s2,64])
-			x = g_bn2(x,isTrain)
-			deconv2_out = tf.nn.relu(x)
-			# print deconv2_out.get_shape()
+			with tf.variable_scope("deconv2"):
+				x = deconv2d(deconv1_out,[Batch_size,s2,s2,64])
+				x = g_bn2(x,isTrain)
+				deconv2_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
 
-		with tf.variable_scope("deconv3"):
-			x = deconv2d(deconv2_out,[Batch_size,s,s,Image_Channel])
-			# x = g_bn3(x,isTrain)
-			deconv3_out = tf.nn.tanh(x)
+			with tf.variable_scope("deconv3"):
+				x = deconv2d(deconv2_out,[Batch_size,s,s,Image_Channel])
+				# x = g_bn3(x,isTrain)
+				deconv3_out = tf.nn.tanh(x)
 
-		return deconv3_out
-
-
-		"""
-		s16,s8,s4,s2 = 4,8,16,32
-		#project and reshape
-		with tf.variable_scope("linear1"):
-			x = linear(z,[100,64*8*s16*s16])
-			x = tf.reshape(x,[Batch_size,s16,s16,64*8])
-			x = g_bn0(x,isTrain)
-			project_out = tf.nn.relu(x)
-			# print x.get_shape()
+			return deconv3_out
 
 
-		with tf.variable_scope("deconv1"):
-			x = deconv2d(project_out,[Batch_size,s8,s8,64*4])
-			x = g_bn1(x,isTrain)
-			deconv1_out = tf.nn.relu(x)
-			# print deconv1_out.get_shape()
+		if dataset=="cifar10":
+			s8,s4,s2,s = 4,8,16,32
+			#project and reshape
+			with tf.variable_scope("linear1"):
+				x = linear(z,[100,64*8*s8*s8])
+				x = tf.reshape(x,[Batch_size,s8,s8,64*8])
+				x = g_bn0(x,isTrain)
+				project_out = tf.nn.relu(x)
+				# print x.get_shape()
 
-		with tf.variable_scope("deconv2"):
-			x = deconv2d(deconv1_out,[Batch_size,s4,s4,64*2])
-			x = g_bn2(x,isTrain)
-			deconv2_out = tf.nn.relu(x)
-			# print deconv2_out.get_shape()
+			with tf.variable_scope("deconv1"):
+				x = deconv2d(project_out,[Batch_size,s4,s4,64*4])
+				x = g_bn1(x,isTrain)
+				deconv1_out = tf.nn.relu(x)
+				# print deconv1_out.get_shape()
 
-		with tf.variable_scope("deconv3"):
-			x = deconv2d(deconv2_out,[Batch_size,s2,s2,64])
-			x = g_bn3(x,isTrain)
-			deconv3_out = tf.nn.relu(x)
-			# print deconv2_out.get_shape()
+			with tf.variable_scope("deconv2"):
+				x = deconv2d(deconv1_out,[Batch_size,s2,s2,64*2])
+				x = g_bn2(x,isTrain)
+				deconv2_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
+
+			with tf.variable_scope("deconv3"):
+				x = deconv2d(deconv2_out,[Batch_size,s,s,Image_Channel])
+				# x = g_bn3(x,isTrain)
+				deconv3_out = tf.nn.tanh(x)
+				# print deconv2_out.get_shape()
+
+			return deconv3_out
+	
+		if dataset=="celebraA":
+			s16,s8,s4,s2,s = 4,8,16,32,64
+			#project and reshape
+			with tf.variable_scope("linear1"):
+				x = linear(z,[100,64*8*s16*s16])
+				x = tf.reshape(x,[Batch_size,s16,s16,64*8])
+				x = g_bn0(x,isTrain)
+				project_out = tf.nn.relu(x)
+				# print x.get_shape()
 
 
-		with tf.variable_scope("deconv4"):
-			x = deconv2d(deconv3_out,[Batch_size,s,s,Image_Channel])
-			# x = bn(x)
-			deconv4_out = tf.nn.tanh(x)
-			# print deconv3_out.get_shape()
+			with tf.variable_scope("deconv1"):
+				x = deconv2d(project_out,[Batch_size,s8,s8,64*4])
+				x = g_bn1(x,isTrain)
+				deconv1_out = tf.nn.relu(x)
+				# print deconv1_out.get_shape()
 
-	return deconv4_out
-	"""
+			with tf.variable_scope("deconv2"):
+				x = deconv2d(deconv1_out,[Batch_size,s4,s4,64*2])
+				x = g_bn2(x,isTrain)
+				deconv2_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
+
+			with tf.variable_scope("deconv3"):
+				x = deconv2d(deconv2_out,[Batch_size,s2,s2,64])
+				x = g_bn3(x,isTrain)
+				deconv3_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
+
+
+			with tf.variable_scope("deconv4"):
+				x = deconv2d(deconv3_out,[Batch_size,s,s,Image_Channel])
+				# x = bn(x)
+				deconv4_out = tf.nn.tanh(x)
+				# print deconv3_out.get_shape()
+
+			return deconv4_out
+
+
+		if dataset=="bu4d":
+			s16,s8,s4,s2 = 4,8,16,32
+			#project and reshape
+			with tf.variable_scope("linear1"):
+				x = linear(z,[100,64*8*s16*s16])
+				x = tf.reshape(x,[Batch_size,s16,s16,64*8])
+				x = g_bn0(x,isTrain)
+				project_out = tf.nn.relu(x)
+				# print x.get_shape()
+
+			with tf.variable_scope("deconv1"):
+				x = deconv2d(project_out,[Batch_size,s8,s8,64*4])
+				x = g_bn1(x,isTrain)
+				deconv1_out = tf.nn.relu(x)
+				# print deconv1_out.get_shape()
+
+			with tf.variable_scope("deconv2"):
+				x = deconv2d(deconv1_out,[Batch_size,s4,s4,64*2])
+				x = g_bn2(x,isTrain)
+				deconv2_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
+
+			with tf.variable_scope("deconv3"):
+				x = deconv2d(deconv2_out,[Batch_size,s2,s2,64])
+				x = g_bn3(x,isTrain)
+				deconv3_out = tf.nn.relu(x)
+				# print deconv2_out.get_shape()
+
+
+			with tf.variable_scope("deconv4"):
+				x = deconv2d(deconv3_out,[Batch_size,s,s,Image_Channel])
+				# x = bn(x)
+				deconv4_out = tf.nn.tanh(x)
+				# print deconv3_out.get_shape()
+
+			return deconv4_out
 
 ##################################################################
 def discrimator(image,reuse=False):
