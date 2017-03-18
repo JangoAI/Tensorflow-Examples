@@ -8,6 +8,12 @@ import os
 import codecs
 import logging
 from PIL import Image
+from scipy import misc
+import glob
+
+from cifar10 import load_cifar10
+from celebaA import load_celeA
+
 
 logging.basicConfig(level=logging.DEBUG,
                 format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
@@ -27,22 +33,37 @@ if you want to tune this DCGAN model into your own needs,you need to:
 
 """
 
-
-Image_Size = 28
-Image_Channel = 1
+Use_Real_Data = True
+Image_Size = 64
+Image_Channel = 3
+Restore_last_trained = False
 BN_DECAY = 0.9
 Batch_size = 64
 Learning_rate = 0.0002
-Train_Epochs = 300
+Train_Epochs = 25
 Discriminator_Start_Filters = 64
 Generator_Start_Filters = 64
 Save_Path = "./"
-Learning_rate_Decay = 0.999
+Learning_rate_Decay = 0.99
+
 
 IMAGES_DIR = "./bu4d64_n"
 #######################################################################
 
 #datasets manipulations
+#load celebA
+def get_image(file,cropped_size=108):
+	arr = misc.imread(file)
+	h,w = arr.shape[:2]
+	center_x,center_y = h/2, w/2
+	left_corner_x =  center_x - cropped_size/2
+	left_corner_y =  center_y - cropped_size/2
+	crop =  arr[left_corner_x:left_corner_x+cropped_size,left_corner_y:left_corner_y+cropped_size,:]
+	crop = misc.imresize(crop,[64, 64])
+	# plt.imshow(crop)
+	# plt.show()
+	return crop/255.0
+
 
 #function to load mnist data
 def load_mnist_dataset(one_hot=True):
@@ -199,6 +220,7 @@ class batch_norm(object):
 											scale=True,
 											is_training=train,
 											scope=self.name)
+
 #untils function
 # batch normalization : deals with poor initialization helps gradient flow
 d_bn1 = batch_norm(name='d_bn1')
@@ -209,6 +231,7 @@ g_bn0 = batch_norm(name='g_bn0')
 g_bn1 = batch_norm(name='g_bn1')
 g_bn2 = batch_norm(name='g_bn2')
 g_bn3 = batch_norm(name='g_bn3')
+g_bn4 = batch_norm(name='g_bn4')
 
 
 def conv2d(x,filter_shape,stddev=0.02):
@@ -239,7 +262,7 @@ def leakyRelu(x,scope=0.2):
 
 def gen_batches(data,batch_size=50,shuffle=True):
 	data = np.array(data)
-	data_size = data.shape[0]
+	data_size = len(data)
 	if shuffle:
 		idx = np.arange(data_size)
 		np.random.shuffle(idx) 
@@ -248,7 +271,10 @@ def gen_batches(data,batch_size=50,shuffle=True):
 	for i in range(batch_length):
 		yield data[i*batch_size:i*batch_size+batch_size]
 
+
+
 ###################################################################################
+
 def generator(z,reuse=False,isTrain=True,dataset="celebraA"):
 	with tf.variable_scope("generator") as scope:
 		if reuse:
@@ -475,10 +501,10 @@ def loss_function(z,image):
 	
 	
 	
-	with tf.device("/gpu:0"):
+	with tf.device("/cpu:0"):
 		d_optim = optimizer.apply_gradients(zip(d_grads, d_variables))
 		# d_optim = tf.train.AdamOptimizer(lr).minimize(d_total_loss, var_list=d_variables)
-	with tf.device("/gpu:1"):
+	with tf.device("/cpu:0"):
 		g_optim = optimizer.apply_gradients(zip(g_grads, g_variables))
 		# g_optim = tf.train.AdamOptimizer(lr).minimize(g_total_loss, var_list=g_variables)
 
@@ -493,21 +519,28 @@ def create_feed_dict(placeholder_z,placeholder_image,z,image):
 
 def train():
 	#for minist
-	trX,_,vlX,_,teX,_ = load_mnist_dataset()
-	testdata = trX
-	
+	# trX,_,vlX,_,teX,_ = load_mnist_dataset()
+	# testdata = trX
+	#for cifar10
+	# testdata = load_cifar10('./cifar-10-batches-py')
+	#for celebA
+	testdata = load_celeA()
+
 	#For 64*64 dataset	
-	# ds = DataSet(True)
+	# ds = DataSet(Use_Real_Data)
 	# testdata = ds.images
 	
-
 	g = tf.Graph()
 
+	Total_step = 0
 	with g.as_default():
 		sess = tf.Session()
 
 		z, image = create_placeholders()
+
 		d_total_loss,g_total_loss,d_optim, g_optim,precision = loss_function(z,image)
+
+		sample_image = generator(z,reuse=True,isTrain=False)
 
 		saver = tf.train.Saver()
 		sess.run(tf.initialize_all_variables())
@@ -515,39 +548,50 @@ def train():
 
 		module_file = tf.train.latest_checkpoint('./Model')
 
-		if module_file:
+		if Restore_last_trained and module_file:
 			saver.restore(sess,module_file)
 			logging.debug("load module file:%s, model restored" % module_file)
 
 
 		for epoch in range(Train_Epochs):
 			for step,real_images in enumerate(gen_batches(testdata,batch_size=Batch_size)):
-				batch_images = real_images.reshape([Batch_size,Image_Size,Image_Size,1])
+				batch_images = real_images.reshape([Batch_size,Image_Size,Image_Size,Image_Channel])
 				batch_z = np.random.uniform(-1, 1, [Batch_size, 100]).astype(np.float32)
 				#optimize d once, optimize g twice
 				_ ,dloss,prec = sess.run([d_optim,d_total_loss,precision],feed_dict=create_feed_dict(z,image,batch_z,batch_images))
-				for _ in range(5):
+				for _ in range(2):
 					_ ,gloss = sess.run([g_optim,g_total_loss],feed_dict={z:batch_z})
 
+				Total_step+=1
 
 				logging.debug("Epoch:%s step:%s dloss:%s gloss:%s d_precision:%s"%(epoch,step,dloss,gloss,prec))
-				if (step)%1000==0:
+				if Total_step%100==0:
 					with tf.variable_scope("learn_param",reuse=True):
 						lr = tf.get_variable("learning_rate",shape=[],dtype=tf.float32,initializer=tf.constant_initializer(Learning_rate),trainable=False)
 						lr = tf.assign(lr,lr*Learning_rate_Decay)
 						logging.debug("learning_rate decay:%6f" % sess.run(lr))
 					batch_z = np.random.uniform(-1, 1, [Batch_size, 100]).astype(np.float32)
-					# samples = sess.run([sample_image],feed_dict={z:batch_z})
+					samples = sess.run(sample_image,feed_dict={z:batch_z})
 					# plot_sample(samples, str(epoch)+"_"+str(step))
+					save_images(samples,epoch,step)
 					logging.debug("Sample saved")
 					saver.save(sess,"./Model/GANModel",global_step=epoch)
 
+def save_images(images_arr,epoch,step):
+	print images_arr.shape
+	assert len(images_arr)==64
+	rows,cols = 8,8
+	arr = np.zeros([rows*Image_Size,cols*Image_Size,Image_Channel])
+	for i in range(rows):
+		for j in range(cols):
+			arr[i*Image_Size:(i+1)*Image_Size,j*Image_Size:(j+1)*Image_Size,:] = images_arr[i*8+j]
+	misc.imsave("./samples/image_{}_{}.jpg".format(epoch,step),arr)
 
 def plot_sample(batch_images,num_str,show = False,save=True):
 		batch_images = inverse_transform(np.array(batch_images))
 		# batch_images = np.array(batch_images>0.5,dtype=np.float32)
 
-		ori = batch_images.reshape([-1,Image_Size,Image_Size])
+		ori = batch_images.reshape([-1,Image_Size,Image_Size,Image_Channel])
 		figs, axes = plt.subplots(8,8, figsize=(7,7))
 		for ax in axes.flatten():
 			ax.set_xticks([])
@@ -556,10 +600,11 @@ def plot_sample(batch_images,num_str,show = False,save=True):
 		images_num = batch_images.shape[0]
 		for i in range(8):
 			for j in range(8):
-				axes[i,j].imshow(ori[i*8+j],cmap='gray')
+				axes[i,j].imshow(ori[i*8+j])
 		if show:
 			plt.show()
 		if save:
+			save_images(batch_images,"test","test")
 			plt.savefig('test_%s.png' % num_str)
 
 def inverse_transform(images):
@@ -581,12 +626,12 @@ def gen_samples():
 			print "load module file:%s, model restored" % module_file
 
 		batch_z = np.random.uniform(-1.0, 1.0, [Batch_size, 100]).astype(np.float32)
-		samples = sess.run([sample_image],feed_dict={z:batch_z})
-		plot_sample(samples,None,show = True,save=False)
+		samples = sess.run(sample_image,feed_dict={z:batch_z})
+		plot_sample(samples,None,show = True,save=True)
 
 
 
 ############################################################################
 #use train to train DCGAN model, use gen_samples to create learned samples
-train()
-# gen_samples() 
+# train()
+gen_samples() 
